@@ -1,68 +1,85 @@
 <?php
-	session_start();
-	require_once "./functions/admin.php";
-	$title = "Add new book";
-	require "./template/header.php";
-	require "./functions/database_functions.php";
-	$conn = db_connect();
+    session_start();
+    require_once "./functions/admin.php";
+    $title = "Add new book";
+    require "./template/header.php";
+    require "./functions/database_functions.php";
+    $conn = db_connect();
 
-	if(isset($_POST['add'])){
-		$isbn = trim($_POST['isbn']);
-		$isbn = mysqli_real_escape_string($conn, $isbn);
-		
-		$title = trim($_POST['title']);
-		$title = mysqli_real_escape_string($conn, $title);
+    if (isset($_POST['add'])) {
+        $isbn = trim($_POST['isbn']);
+        $title = trim($_POST['title']);
+        $author = trim($_POST['author']);
+        $descr = trim($_POST['descr']);
+        $price = floatval(trim($_POST['price']));
+        $publisher = trim($_POST['publisher']);
 
-		$author = trim($_POST['author']);
-		$author = mysqli_real_escape_string($conn, $author);
-		
-		$descr = trim($_POST['descr']);
-		$descr = mysqli_real_escape_string($conn, $descr);
-		
-		$price = floatval(trim($_POST['price']));
-		$price = mysqli_real_escape_string($conn, $price);
-		
-		$publisher = trim($_POST['publisher']);
-		$publisher = mysqli_real_escape_string($conn, $publisher);
+        // Add image
+        $image = null;
+        if (isset($_FILES['image']) && $_FILES['image']['name'] != "") {
+            $image = $_FILES['image']['name'];
+            $directory_self = str_replace(basename($_SERVER['PHP_SELF']), '', $_SERVER['PHP_SELF']);
+            $uploadDirectory = $_SERVER['DOCUMENT_ROOT'] . $directory_self . "bootstrap/img/";
+            $uploadDirectory .= $image;
+            move_uploaded_file($_FILES['image']['tmp_name'], $uploadDirectory);
+        }
 
-		// add image
-		if(isset($_FILES['image']) && $_FILES['image']['name'] != ""){
-			$image = $_FILES['image']['name'];
-			$directory_self = str_replace(basename($_SERVER['PHP_SELF']), '', $_SERVER['PHP_SELF']);
-			$uploadDirectory = $_SERVER['DOCUMENT_ROOT'] . $directory_self . "bootstrap/img/";
-			$uploadDirectory .= $image;
-			move_uploaded_file($_FILES['image']['tmp_name'], $uploadDirectory);
-		}
+        // Find publisher or insert new one
+        $findPub = "SELECT publisherid FROM publisher WHERE publisher_name = ?";
+        $stmt = mysqli_prepare($conn, $findPub);
+        if (!$stmt) {
+            die("Prepare failed for SELECT publisher query: " . mysqli_error($conn));
+        }
 
-		// find publisher and return pubid
-		// if publisher is not in db, create new
-		$findPub = "SELECT * FROM publisher WHERE publisher_name = '$publisher'";
-		$findResult = mysqli_query($conn, $findPub);
-		if(!$findResult){
-			// insert into publisher table and return id
-			$insertPub = "INSERT INTO publisher(publisher_name) VALUES ('$publisher')";
-			$insertResult = mysqli_query($conn, $insertPub);
-			if(!$insertResult){
-				echo "Can't add new publisher " . mysqli_error($conn);
-				exit;
-			}
-			$publisherid = mysql_insert_id($conn);
-		} else {
-			$row = mysqli_fetch_assoc($findResult);
-			$publisherid = $row['publisherid'];
-		}
+        mysqli_stmt_bind_param($stmt, "s", $publisher);
+        if (!mysqli_stmt_execute($stmt)) {
+            die("Execution failed for SELECT publisher query: " . mysqli_error($conn));
+        }
 
+        $result = mysqli_stmt_get_result($stmt);
+        if (!$result) {
+            die("Fetching result failed for SELECT publisher query: " . mysqli_error($conn));
+        }
 
-		$query = "INSERT INTO books VALUES ('" . $isbn . "', '" . $title . "', '" . $author . "', '" . $image . "', '" . $descr . "', '" . $price . "', '" . $publisherid . "')";
-		$result = mysqli_query($conn, $query);
-		if(!$result){
-			echo "Can't add new data " . mysqli_error($conn);
-			exit;
-		} else {
-			header("Location: admin_book.php");
-		}
-	}
+        if (mysqli_num_rows($result) > 0) {
+            // Fetch existing publisher ID
+            $row = mysqli_fetch_assoc($result);
+            $publisherid = $row['publisherid'];
+        } else {
+            // Insert new publisher and get the ID
+            $insertPub = "INSERT INTO publisher (publisher_name) VALUES (?)";
+            $stmt = mysqli_prepare($conn, $insertPub);
+            if (!$stmt) {
+                die("Prepare failed for INSERT publisher query: " . mysqli_error($conn));
+            }
+
+            mysqli_stmt_bind_param($stmt, "s", $publisher);
+            if (!mysqli_stmt_execute($stmt)) {
+                die("Execution failed for INSERT publisher query: " . mysqli_error($conn));
+            }
+
+            $publisherid = mysqli_insert_id($conn);
+            if (!$publisherid) {
+                die("Failed to retrieve new publisher ID.");
+            }
+        }
+
+        // Insert book data
+        $query = "INSERT INTO books (book_isbn, book_title, book_author, book_image, book_descr, book_price, publisherid) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $stmt = mysqli_prepare($conn, $query);
+        if (!$stmt) {
+            die("Prepare failed for INSERT book query: " . mysqli_error($conn));
+        }
+
+        mysqli_stmt_bind_param($stmt, "ssssssd", $isbn, $title, $author, $image, $descr, $price, $publisherid);
+        if (!mysqli_stmt_execute($stmt)) {
+            die("Execution failed for INSERT book query: " . mysqli_error($conn));
+        } else {
+            header("Location: admin_book.php");
+        }
+    }
 ?>
+
 	<form method="post" action="admin_add.php" enctype="multipart/form-data">
 		<table class="table">
 			<tr>
